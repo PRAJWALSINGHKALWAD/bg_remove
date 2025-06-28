@@ -1,0 +1,28 @@
+# Virtual environment
+venv/
+env/
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Output images (optional - comment out if you want to track them)
+*_nobg.*
+
+# Model cache
+~/.cache/
+.cache/
