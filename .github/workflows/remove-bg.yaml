@@ -1,0 +1,40 @@
+name: Remove Image Backgrounds
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**.jpg'
+      - '**.jpeg'
+      - '**.png'
+
+jobs:
+  remove-bg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow rembg onnxruntime
+
+      - name: Remove background from all images
+        run: |
+          for img in *.jpg *.jpeg *.png; do
+            if [ -f "$img" ]; then
+              python bg_remove.py "$img"
+            fi
+          done
+
+      - name: Upload processed images as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nobg-images
+          path: "*_nobg.*"
