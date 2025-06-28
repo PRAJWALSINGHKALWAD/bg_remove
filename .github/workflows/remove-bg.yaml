@@ -29,7 +29,7 @@ jobs:
         run: |
           for img in *.jpg *.jpeg *.png; do
             if [ -f "$img" ]; then
-              python bg_remove.py "$img"
+              python bg-remove.py "$img"
             fi
           done
 
