@@ -99,7 +99,23 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+          # Install OpenGL and graphics libraries (Ubuntu 24.04 compatible)
+          sudo apt-get install -y \
+            libgl1 \
+            libglib2.0-0 \
+            libsm6 \
+            libxext6 \
+            libxrender-dev \
+            libgomp1 \
+            libgstreamer1.0-0 \
+            libgstreamer-plugins-base1.0-0 \
+            libxcb-xinerama0 \
+            libfontconfig1 \
+            libxss1 \
+            libasound2 || true
+          
+          # Fallback for older Ubuntu versions
+          sudo apt-get install -y libgl1-mesa-glx || true
 
       - name: Install Python dependencies
         run: |
