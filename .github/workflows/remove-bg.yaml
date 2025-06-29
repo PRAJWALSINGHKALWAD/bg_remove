@@ -1,16 +1,68 @@
-name: Remove Image Backgrounds
+name: Professional Background Removal
 
 on:
   workflow_dispatch:
+    inputs:
+      quality_level:
+        description: 'Processing Quality Level'
+        required: true
+        default: 'ultra'
+        type: choice
+        options:
+        - 'fast'
+        - 'high'
+        - 'ultra'
+        - 'commercial'
+      batch_size:
+        description: 'Batch Size (images per job)'
+        required: false
+        default: '10'
+        type: string
   push:
     paths:
+      - 'input/**'
       - '**.jpg'
       - '**.jpeg'
       - '**.png'
+      - '**.webp'
 
 jobs:
-  remove-bg:
+  setup:
     runs-on: ubuntu-latest
+    outputs:
+      image-count: ${{ steps.count.outputs.count }}
+      batches: ${{ steps.batch.outputs.batches }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Count images
+        id: count
+        run: |
+          count=$(find . -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" | grep -v "output/" | wc -l)
+          echo "count=$count" >> $GITHUB_OUTPUT
+          echo "Found $count images to process"
+      
+      - name: Calculate batches
+        id: batch
+        run: |
+          batch_size=${{ github.event.inputs.batch_size || '10' }}
+          count=${{ steps.count.outputs.count }}
+          batches=$(( (count + batch_size - 1) / batch_size ))
+          echo "batches=$batches" >> $GITHUB_OUTPUT
+          echo "Will process in $batches batches of $batch_size images each"
+
+  remove-bg:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: needs.setup.outputs.image-count > 0
+    strategy:
+      matrix:
+        batch: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      fail-fast: false
+      max-parallel: 3
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,22 +71,125 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pillow rembg onnxruntime
+          pip install -r requirements.txt
+          # Pre-download models to avoid timeout during processing
+          python -c "from rembg import new_session; new_session('u2net'); new_session('u2net_human_seg'); new_session('isnet-general-use')"
 
-      - name: Remove background from all images
+      - name: Create directories
         run: |
-          for img in *.jpg *.jpeg *.png; do
-            if [ -f "$img" ]; then
-              python bg-remove.py "$img"
-            fi
-          done
+          mkdir -p output
+          mkdir -p temp_batch_${{ matrix.batch }}
 
-      - name: Upload processed images as artifact
+      - name: Prepare batch
+        id: batch_prep
+        run: |
+          batch_size=${{ github.event.inputs.batch_size || '10' }}
+          skip_count=$(( ${{ matrix.batch }} * batch_size ))
+          
+          # Find all images and create batch
+          find . -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" | \
+            grep -v "output/" | \
+            sort | \
+            tail -n +$(( skip_count + 1 )) | \
+            head -n $batch_size > batch_${{ matrix.batch }}_files.txt
+          
+          # Check if batch has any files
+          if [ -s batch_${{ matrix.batch }}_files.txt ]; then
+            echo "has_files=true" >> $GITHUB_OUTPUT
+            echo "Processing batch ${{ matrix.batch }}:"
+            cat batch_${{ matrix.batch }}_files.txt
+          else
+            echo "has_files=false" >> $GITHUB_OUTPUT
+            echo "No files for batch ${{ matrix.batch }}, skipping"
+          fi
+
+      - name: Process images with commercial quality
+        if: steps.batch_prep.outputs.has_files == 'true'
+        run: |
+          quality="${{ github.event.inputs.quality_level || 'ultra' }}"
+          echo "Processing with quality level: $quality"
+          
+          while IFS= read -r image_path; do
+            if [ -f "$image_path" ]; then
+              echo "Processing: $image_path"
+              python true_commercial.py "$image_path" --quality "$quality" --output-dir "output/" --verbose
+              
+              # Check if processing was successful
+              output_file="output/$(basename "$image_path" | sed 's/\.[^.]*$/_nobg.png/')"
+              if [ -f "$output_file" ]; then
+                echo "✓ Successfully processed: $image_path"
+              else
+                echo "✗ Failed to process: $image_path"
+              fi
+            fi
+          done < batch_${{ matrix.batch }}_files.txt
+
+      - name: Upload batch results
+        if: steps.batch_prep.outputs.has_files == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: nobg-images
-          path: "*_nobg.*"
+          name: nobg-images-batch-${{ matrix.batch }}
+          path: output/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload processing logs
+        if: steps.batch_prep.outputs.has_files == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: processing-logs-batch-${{ matrix.batch }}
+          path: "*.log"
+          retention-days: 7
+          if-no-files-found: ignore
+
+  consolidate:
+    needs: [setup, remove-bg]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all batch results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nobg-images-batch-*
+          path: all-results/
+          merge-multiple: true
+
+      - name: Create final archive
+        run: |
+          cd all-results
+          zip -r ../professional-background-removal-results.zip . || true
+          ls -la ../
+
+      - name: Upload consolidated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: professional-background-removal-complete
+          path: professional-background-removal-results.zip
+          retention-days: 90
+
+      - name: Generate summary
+        run: |
+          echo "# Background Removal Summary" > summary.md
+          echo "" >> summary.md
+          echo "**Quality Level:** ${{ github.event.inputs.quality_level || 'ultra' }}" >> summary.md
+          echo "**Images Processed:** ${{ needs.setup.outputs.image-count }}" >> summary.md
+          echo "**Batches:** ${{ needs.setup.outputs.batches }}" >> summary.md
+          echo "**Processing Date:** $(date)" >> summary.md
+          echo "" >> summary.md
+          echo "Download the \`professional-background-removal-complete\` artifact to get all processed images." >> summary.md
+
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: processing-summary
+          path: summary.md

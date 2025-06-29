@@ -20,6 +20,32 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Processing files
+*.log
+temp_*/
+batch_*_files.txt
+
+# Large output files (keep directory structure)
+output/*.png
+output/*.jpg
+output/*.jpeg
+!output/.gitkeep
+
+# Sample/test images in root (keep input folder clean)
+*.jpg
+*.jpeg
+*.png
+*.webp
+!input/.gitkeep
+
+# Backup files
+*_OLD.*
+*_backup.*
+
+# GitHub Actions artifacts
+professional-background-removal-results.zip
+Thumbs.db
+
 # Output images (optional - comment out if you want to track them)
 *_nobg.*
 

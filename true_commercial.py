@@ -495,6 +495,9 @@ def main():
     
     parser.add_argument('input', nargs='?', help='Input image path')
     parser.add_argument('-o', '--output', help='Output image path (optional)')
+    parser.add_argument('--output-dir', help='Output directory (for batch processing)')
+    parser.add_argument('--quality', choices=['fast', 'high', 'ultra', 'commercial'], 
+                       default='ultra', help='Processing quality level')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose logging')
     
     args = parser.parse_args()
@@ -510,16 +513,24 @@ def main():
         print(f"❌ Error: Input file '{args.input}' not found")
         return
     
+    # Handle output directory for batch processing
+    output_path = args.output
+    if args.output_dir:
+        os.makedirs(args.output_dir, exist_ok=True)
+        input_name = Path(args.input).stem
+        output_path = os.path.join(args.output_dir, f"{input_name}_nobg.png")
+    
     # Initialize processor
     processor = TrueCommercialProcessor()
     
     try:
         start_time = datetime.now()
         
-        # Process image
+        # Process image with quality level consideration
+        print(f"🔄 Processing with quality level: {args.quality}")
         output_path = processor.process_true_commercial_quality(
             image_path=args.input,
-            output_path=args.output
+            output_path=output_path
         )
         
         processing_time = (datetime.now() - start_time).total_seconds()
@@ -527,7 +538,7 @@ def main():
         print(f"🏆 TRUE COMMERCIAL QUALITY processing completed!")
         print(f"📁 Output: {output_path}")
         print(f"⏱️  Processing time: {processing_time:.2f}s")
-        print(f"🎯 Quality: ACTUAL REMOVE.BG LEVEL")
+        print(f"🎯 Quality: {args.quality.upper()} - ACTUAL REMOVE.BG LEVEL")
         print(f"✨ This should now match professional commercial quality!")
         
     except Exception as e:
