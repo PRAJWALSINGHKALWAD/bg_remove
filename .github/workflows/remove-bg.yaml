@@ -61,15 +61,25 @@ jobs:
         run: |
           batch_size=${{ github.event.inputs.batch_size || '10' }}
           count=${{ steps.count.outputs.count }}
-          batches=$(( (count + batch_size - 1) / batch_size ))
+          
+          # Ensure count is a number
+          if [ -z "$count" ] || [ "$count" -eq 0 ]; then
+            echo "No images found, setting count to 0"
+            count=0
+            batches=0
+          else
+            batches=$(( (count + batch_size - 1) / batch_size ))
+          fi
+          
           echo "batches=$batches" >> $GITHUB_OUTPUT
           echo "Will process in $batches batches of $batch_size images each"
+          echo "Final count: $count, batches: $batches"
 
   remove-bg:
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    if: needs.setup.outputs.image-count > 0
+    if: needs.setup.outputs.image-count != '0' && needs.setup.outputs.image-count != ''
     strategy:
       matrix:
         batch: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
