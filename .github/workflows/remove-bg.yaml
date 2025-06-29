@@ -39,9 +39,22 @@ jobs:
       - name: Count images
         id: count
         run: |
-          count=$(find . -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" | grep -v "output/" | wc -l)
+          echo "Looking for images in the repository..."
+          echo "Current directory contents:"
+          ls -la
+          echo ""
+          echo "Searching for image files..."
+          
+          # Find images and show them
+          find . -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" | grep -v "output/" > found_images.txt || true
+          
+          echo "Found images:"
+          cat found_images.txt || echo "No images found"
+          echo ""
+          
+          count=$(cat found_images.txt | wc -l)
+          echo "Total image count: $count"
           echo "count=$count" >> $GITHUB_OUTPUT
-          echo "Found $count images to process"
       
       - name: Calculate batches
         id: batch
@@ -163,12 +176,28 @@ jobs:
           pattern: nobg-images-batch-*
           path: all-results/
           merge-multiple: true
+        continue-on-error: true
 
       - name: Create final archive
         run: |
-          cd all-results
-          zip -r ../professional-background-removal-results.zip . || true
-          ls -la ../
+          # Create all-results directory if it doesn't exist
+          mkdir -p all-results
+          
+          # Check if we have any results
+          if [ "$(ls -A all-results 2>/dev/null)" ]; then
+            echo "Found processed images, creating archive..."
+            cd all-results
+            zip -r ../professional-background-removal-results.zip .
+            cd ..
+          else
+            echo "No processed images found, creating empty archive..."
+            echo "No images were processed." > all-results/no-results.txt
+            cd all-results
+            zip -r ../professional-background-removal-results.zip .
+            cd ..
+          fi
+          
+          ls -la
 
       - name: Upload consolidated results
         uses: actions/upload-artifact@v4
@@ -182,11 +211,28 @@ jobs:
           echo "# Background Removal Summary" > summary.md
           echo "" >> summary.md
           echo "**Quality Level:** ${{ github.event.inputs.quality_level || 'ultra' }}" >> summary.md
-          echo "**Images Processed:** ${{ needs.setup.outputs.image-count }}" >> summary.md
-          echo "**Batches:** ${{ needs.setup.outputs.batches }}" >> summary.md
+          echo "**Images Found:** ${{ needs.setup.outputs.image-count }}" >> summary.md
+          echo "**Batches Planned:** ${{ needs.setup.outputs.batches }}" >> summary.md
           echo "**Processing Date:** $(date)" >> summary.md
           echo "" >> summary.md
-          echo "Download the \`professional-background-removal-complete\` artifact to get all processed images." >> summary.md
+          
+          if [ -f "all-results/no-results.txt" ]; then
+            echo "⚠️ **Status:** No images were processed" >> summary.md
+            echo "" >> summary.md
+            echo "**Possible reasons:**" >> summary.md
+            echo "- No images found in the repository" >> summary.md
+            echo "- All batch jobs failed to process images" >> summary.md
+            echo "- Images were in unsupported formats" >> summary.md
+            echo "" >> summary.md
+            echo "**Next steps:**" >> summary.md
+            echo "1. Check that images are in supported formats (jpg, jpeg, png, webp)" >> summary.md
+            echo "2. Ensure images are uploaded to the repository" >> summary.md
+            echo "3. Check individual batch job logs for errors" >> summary.md
+          else
+            echo "✅ **Status:** Processing completed successfully!" >> summary.md
+            echo "" >> summary.md
+            echo "Download the \`professional-background-removal-complete\` artifact to get all processed images." >> summary.md
+          fi
 
       - name: Upload summary
         uses: actions/upload-artifact@v4
